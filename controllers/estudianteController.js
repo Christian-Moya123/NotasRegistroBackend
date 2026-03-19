@@ -16,9 +16,12 @@ const validarCedula = require('../utils/validarCedula');
 
 exports.crearEstudiante = async (req, res) => {
   try {
-    // Validar cédula solo si el tipo de documento es cédula (por defecto)
+
+    const cedulaLimpia = req.body.cedula.trim();
+
+    // Validar cédula
     if (!req.body.tipoDocumento || req.body.tipoDocumento === 'cedula') {
-      if (!validarCedula(req.body.cedula)) {
+      if (!validarCedula(cedulaLimpia)) {
         return res.status(400).json({
           success: false,
           message: 'La cédula ingresada no es válida'
@@ -26,15 +29,36 @@ exports.crearEstudiante = async (req, res) => {
       }
     }
 
+    // 🔥 VALIDACIÓN MANUAL ANTES DE CREAR
+    const yaExiste = await Estudiante.findOne({ cedula: cedulaLimpia });
+
+    if (yaExiste) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ya existe un estudiante con esa cédula'
+      });
+    }
+
+    req.body.cedula = cedulaLimpia;
     req.body.createdBy = req.user.id;
-    
+
     const estudiante = await Estudiante.create(req.body);
 
     res.status(201).json({
       success: true,
       data: estudiante
     });
+
   } catch (error) {
+
+    // 🔥 CAPTURAR ERROR 11000 (doble seguridad)
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ya existe un estudiante con esa cédula'
+      });
+    }
+
     console.error(error);
     res.status(500).json({
       success: false,

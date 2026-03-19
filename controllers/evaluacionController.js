@@ -3,42 +3,62 @@ const Estudiante = require('../models/Estudiante');
 exports.crearEvaluacion = async (req, res) => {
   try {
     const estudiante = await Estudiante.findById(req.body.estudiante);
-    
+
     if (!estudiante) {
       return res.status(404).json({
         success: false,
         message: 'Estudiante no encontrado'
       });
     }
-    
+
     req.body.createdBy = req.user.id;
-    
+
     const horarioInicio = new Date(req.body.horarioInicio);
-        const horarioFin = new Date(req.body.horarioFin);
-    
-    const solapada = await Evaluacion.findOne({
+    const horarioFin = new Date(req.body.horarioFin);
+
+
+    /*
+  const solapada = await Evaluacion.findOne({
+    $and: [
+      { horarioInicio: { $lt: horarioFin } }, 
+      { horarioFin: { $gt: horarioInicio } } 
+    ]
+  });
+
+  if (solapada) {
+    return res.status(400).json({
+      success: false,
+      message: 'Ya existe una disertación programada en ese horario. Por favor, elija otro rango.'
+    });
+  }
+
+  */
+
+
+
+    const cantidadSolapadas = await Evaluacion.countDocuments({
       $and: [
-        { horarioInicio: { $lt: horarioFin } }, 
-        { horarioFin: { $gt: horarioInicio } } 
+        { horarioInicio: { $lt: horarioFin } },
+        { horarioFin: { $gt: horarioInicio } }
       ]
     });
 
-    if (solapada) {
+    if (cantidadSolapadas >= 3) {
       return res.status(400).json({
         success: false,
-        message: 'Ya existe una disertación programada en ese horario. Por favor, elija otro rango.'
+        message: 'Ya existen 3 disertaciones programadas en ese horario. Por favor, elija otro rango.'
       });
     }
-    
+
     if (horarioInicio >= horarioFin) {
       return res.status(400).json({
         success: false,
         message: 'El horario de inicio debe ser anterior al horario de fin'
       });
     }
-    
+
     const evaluacion = await Evaluacion.create(req.body);
-    
+
     res.status(201).json({
       success: true,
       data: evaluacion
@@ -56,14 +76,14 @@ exports.crearEvaluacion = async (req, res) => {
 exports.getEvaluaciones = async (req, res) => {
   try {
     let evaluaciones;
-    
+
     if (req.user.tipo === 'administrador') {
       return res.status(403).json({
         success: false,
         message: 'Los administradores no tienen permiso para ver evaluaciones'
       });
     } else if (req.user.tipo === 'lector') {
-     
+
 
       const query = {
         $or: [
@@ -71,9 +91,9 @@ exports.getEvaluaciones = async (req, res) => {
           { createdBy: req.user.id }
         ]
       };
-      
-      
-      
+
+
+
       evaluaciones = await Evaluacion.find(query)
         .populate({
           path: 'estudiante',
@@ -84,7 +104,7 @@ exports.getEvaluaciones = async (req, res) => {
           select: 'nombre apellido cedula tipo maestria'
         })
         .lean();
-      
+
       evaluaciones = evaluaciones.map(eval => ({
         ...eval,
         _id: eval._id.toString(),
@@ -98,9 +118,9 @@ exports.getEvaluaciones = async (req, res) => {
           _id: eval.estudiante._id.toString()
         } : null
       }));
-      
-    
-      
+
+
+
     } else if (req.user.tipo === 'director') {
       const query = {
         evaluador: req.user.id
@@ -116,11 +136,11 @@ exports.getEvaluaciones = async (req, res) => {
         })
         .lean();
     }
-    
+
     if (!evaluaciones) {
       evaluaciones = [];
     }
-    
+
     res.status(200).json({
       success: true,
       count: evaluaciones.length,
@@ -194,24 +214,24 @@ exports.getEvaluacion = async (req, res) => {
     const evaluacion = await Evaluacion.findById(req.params.id)
       .populate('estudiante')
       .populate('evaluador');
-    
+
     if (!evaluacion) {
       return res.status(404).json({
         success: false,
         message: 'Evaluación no encontrada'
       });
     }
-    
-   
-    
+
+
+
     // Verificar permisos
     if (req.user.tipo === 'lector') {
       const evaluadorId = evaluacion.evaluador ? evaluacion.evaluador._id.toString() : evaluacion.evaluador.toString();
       const createdById = evaluacion.createdBy.toString();
       const userId = req.user.id;
-      
-      
-      
+
+
+
       // Permitir acceso si el lector es el evaluador o el creador
       if (evaluadorId !== userId && createdById !== userId) {
         return res.status(403).json({
@@ -220,7 +240,7 @@ exports.getEvaluacion = async (req, res) => {
         });
       }
     }
-    
+
     res.status(200).json({
       success: true,
       data: evaluacion
@@ -238,15 +258,15 @@ exports.getEvaluacion = async (req, res) => {
 exports.updateEvaluacion = async (req, res) => {
   try {
     let evaluacion = await Evaluacion.findById(req.params.id);
-    
+
     if (!evaluacion) {
       return res.status(404).json({
         success: false,
         message: 'Evaluación no encontrada'
       });
     }
-    
-      if (req.user.tipo === 'administrador') {
+
+    if (req.user.tipo === 'administrador') {
       return res.status(403).json({
         success: false,
         message: 'Los administradores no tienen permiso para actualizar evaluaciones'
@@ -257,10 +277,10 @@ exports.updateEvaluacion = async (req, res) => {
         message: 'No tiene permiso para actualizar esta evaluación'
       });
     }
-    
+
     if (req.user.tipo === 'lector') {
       const now = new Date();
-      
+
       if (now < evaluacion.horarioInicio || now > evaluacion.horarioFin) {
         return res.status(403).json({
           success: false,
@@ -268,12 +288,12 @@ exports.updateEvaluacion = async (req, res) => {
         });
       }
     }
-    
+
     evaluacion = await Evaluacion.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true
     });
-    
+
     res.status(200).json({
       success: true,
       data: evaluacion
@@ -291,23 +311,23 @@ exports.updateEvaluacion = async (req, res) => {
 exports.deleteEvaluacion = async (req, res) => {
   try {
     const evaluacion = await Evaluacion.findById(req.params.id);
-    
+
     if (!evaluacion) {
       return res.status(404).json({
         success: false,
         message: 'Evaluación no encontrada'
       });
     }
-    
+
     if (req.user.tipo !== 'director') {
       return res.status(403).json({
         success: false,
         message: 'Solo los directores pueden eliminar evaluaciones'
       });
     }
-    
+
     await evaluacion.remove();
-    
+
     res.status(200).json({
       success: true,
       data: {}
